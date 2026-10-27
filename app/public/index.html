@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visnam Email Marketing – App mẫu</title>
+  <style>
+    :root { --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #5c6475; --border: #d9dde5; --accent: #1f6feb; --ok: #1a7f37; --err: #c62828; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #11151c; --card: #1a2029; --text: #e6e9ef; --muted: #9aa3b2; --border: #2c3442; --accent: #58a6ff; --ok: #3fb950; --err: #f85149; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 16px; }
+    h1 { font-size: 22px; margin: 0; }
+    h2 { font-size: 17px; margin: 0 0 12px; }
+    section { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+    label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+    input, select, textarea, button { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+    textarea { min-height: 90px; resize: vertical; }
+    button { cursor: pointer; background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.secondary { background: transparent; color: var(--accent); }
+    button:disabled { opacity: .6; cursor: progress; }
+    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+    .stats { display: flex; flex-wrap: wrap; gap: 16px; }
+    .stats div { min-width: 120px; }
+    .stats strong { display: block; font-size: 20px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .ok { color: var(--ok); } .err { color: var(--err); }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    tr[data-id] { cursor: pointer; }
+    pre { background: var(--bg); padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+    ul.files { margin: 8px 0 0; padding-left: 18px; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Visnam Email Marketing – App mẫu</h1>
+    <p class="muted">Trình duyệt chỉ gọi app này. API key nằm ở server (<code>.env</code>), không bao giờ gửi xuống trình duyệt.</p>
+  </header>
+
+  <section>
+    <h2>Tài khoản</h2>
+    <div class="stats" id="usage"><span class="muted">Đang tải…</span></div>
+  </section>
+
+  <section>
+    <h2>Gửi email</h2>
+    <form id="send-form" class="grid">
+      <label>Sender<select name="senderId" required></select></label>
+      <label>Người nhận<input name="to" type="email" required placeholder="khach@example.com"></label>
+      <label>Tiêu đề<input name="subject" required maxlength="998"></label>
+      <label>Mã tham chiếu (tùy chọn)<input name="referenceId" maxlength="128" placeholder="order-1001"></label>
+      <label style="grid-column: 1 / -1">Nội dung HTML<textarea name="html"><p>Xin chào!</p></textarea></label>
+      <label style="grid-column: 1 / -1">Nội dung text (tùy chọn)<textarea name="text"></textarea></label>
+      <div style="grid-column: 1 / -1">
+        <label>Đính kèm (PDF/JPG/PNG, tối đa 10 MiB, tối đa 3 file)<input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png"></label>
+        <ul class="files" id="file-list"></ul>
+      </div>
+      <div class="row" style="grid-column: 1 / -1">
+        <button type="submit">Gửi</button>
+        <span id="send-status" class="muted"></span>
+      </div>
+    </form>
+  </section>
+
+  <section>
+    <div class="row" style="justify-content: space-between">
+      <h2>Email gần đây</h2>
+      <div class="row">
+        <select id="state-filter" aria-label="Lọc theo trạng thái">
+          <option value="">Mọi trạng thái</option>
+          <option>queued</option><option>sending</option><option>accepted</option><option>failed</option>
+          <option>uncertain</option><option>manual_review</option><option>suppressed</option>
+        </select>
+        <button type="button" class="secondary" id="refresh">Làm mới</button>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tạo lúc</th><th>Người nhận</th><th>state</th><th>deliveryState</th><th>creditState</th><th>Tham chiếu</th></tr></thead>
+        <tbody id="emails"></tbody>
+      </table>
+    </div>
+    <p class="muted">Bấm một dòng để xem chi tiết. Không có webhook kết quả, nên trạng thái được cập nhật bằng cách tra cứu lại.</p>
+    <pre id="detail" hidden></pre>
+  </section>
+</main>
+
+<script>
+  const $ = (selector) => document.querySelector(selector);
+  const form = $('#send-form');
+  const attachments = []; // { name, id, state }
+
+  /** Gọi API của app; lỗi trả về dạng { code, message } được ném ra để hiển thị. */
+  async function api(path, options = {}) {
+    const response = await fetch(path, options);
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw Object.assign(new Error(body.message || body.code || response.statusText), { status: response.status, code: body.code });
+    return body;
+  }
+
+  async function loadAccount() {
+    try {
+      const { usage, senders } = await api('/api/account');
+      $('#usage').innerHTML = '';
+      for (const [label, value] of [['Còn dùng được', usage.available], ['Đang giữ', usage.reserved], ['Đã tiêu', usage.consumed], ['Gửi 24h qua', `${usage.sentLast24Hours}/${usage.dailyLimit}`]]) {
+        const box = document.createElement('div');
+        box.innerHTML = `<span class="muted"></span><strong></strong>`;
+        box.children[0].textContent = label;
+        box.children[1].textContent = value;
+        $('#usage').append(box);
+      }
+      const select = form.elements.senderId;
+      select.innerHTML = '';
+      for (const sender of senders.filter((item) => item.status === 'active')) {
+        select.append(new Option(`${sender.displayName} <${sender.email}>`, sender.senderId));
+      }
+    } catch (error) {
+      $('#usage').innerHTML = `<span class="err"></span>`;
+      $('#usage').firstChild.textContent = `Không tải được tài khoản: ${error.message}`;
+    }
+  }
+
+  // Idempotency-Key cho lần gửi đang chờ. Tạo khi bấm Gửi lần đầu, giữ nguyên nếu bấm lại sau lỗi
+  // mạng/503/429 (cùng nội dung → không gửi trùng). Người dùng sửa nội dung là thao tác mới → bỏ key cũ.
+  let pendingSendKey = null;
+  form.addEventListener('input', () => { pendingSendKey = null; });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = form.querySelector('button[type=submit]');
+    pendingSendKey ||= `web:${crypto.randomUUID()}`;
+    const data = Object.fromEntries(new FormData(form));
+    button.disabled = true;
+    setStatus('Đang gửi…', 'muted');
+    try {
+      const message = await api('/api/emails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...data, idempotencyKey: pendingSendKey, attachmentIds: attachments.filter((file) => file.id).map((file) => file.id) }),
+      });
+      pendingSendKey = null;
+      attachments.length = 0;
+      renderFiles();
+      setStatus(`Đã xếp hàng: ${message.messageId}`, 'ok');
+      loadEmails();
+      loadAccount();
+    } catch (error) {
+      // Không có status nghĩa là fetch không tới được app (mất mạng): cũng được bấm lại với cùng key.
+      const retryable = !error.status || [429, 502, 503, 504].includes(error.status);
+      setStatus(`${error.code || 'Lỗi'}: ${error.message}${retryable ? ' – có thể bấm Gửi lại, sẽ không gửi trùng.' : ''}`, 'err');
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  $('#file-input').addEventListener('change', async (event) => {
+    const file = event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    if (attachments.length >= 3) return setStatus('Tối đa 3 file đính kèm.', 'err');
+    // Mỗi file một key upload riêng; nếu cần upload lại cùng file sau lỗi mạng thì dùng lại key này.
+    const entry = { name: file.name, id: null, state: 'đang upload…', key: `web-upload:${crypto.randomUUID()}` };
+    attachments.push(entry);
+    renderFiles();
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const uploaded = await api('/api/files', { method: 'POST', headers: { 'Idempotency-Key': entry.key }, body });
+      Object.assign(entry, { id: uploaded.id, state: uploaded.state });
+    } catch (error) {
+      entry.state = `lỗi ${error.code || error.message}`;
+    }
+    pendingSendKey = null;
+    renderFiles();
+  });
+
+  function renderFiles() {
+    const list = $('#file-list');
+    list.innerHTML = '';
+    attachments.forEach((file, index) => {
+      const item = document.createElement('li');
+      item.textContent = `${file.name} – ${file.state} `;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'secondary';
+      remove.textContent = 'Bỏ';
+      remove.addEventListener('click', () => { attachments.splice(index, 1); pendingSendKey = null; renderFiles(); });
+      item.append(remove);
+      list.append(item);
+    });
+  }
+
+  async function loadEmails() {
+    const tbody = $('#emails');
+    try {
+      const state = $('#state-filter').value;
+      const { data } = await api(`/api/emails?pageSize=20${state ? `&state=${state}` : ''}`);
+      tbody.innerHTML = '';
+      for (const message of data) {
+        const row = document.createElement('tr');
+        row.dataset.id = message.messageId;
+        for (const value of [new Date(message.createdAt).toLocaleString('vi-VN'), message.to, message.state, message.deliveryState, message.creditState, message.referenceId ?? '']) {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.append(cell);
+        }
+        row.addEventListener('click', () => showDetail(message.messageId));
+        tbody.append(row);
+      }
+      if (!data.length) tbody.innerHTML = '<tr><td colspan="6" class="muted">Chưa có email.</td></tr>';
+    } catch (error) {
+      tbody.innerHTML = '<tr><td colspan="6" class="err"></td></tr>';
+      tbody.querySelector('td').textContent = `Không tải được: ${error.message}`;
+    }
+  }
+
+  async function showDetail(id) {
+    const detail = $('#detail');
+    detail.hidden = false;
+    detail.textContent = 'Đang tải…';
+    try { detail.textContent = JSON.stringify(await api(`/api/emails/${id}`), null, 2); }
+    catch (error) { detail.textContent = `Lỗi: ${error.message}`; }
+  }
+
+  function setStatus(text, className) {
+    const status = $('#send-status');
+    status.textContent = text;
+    status.className = className;
+  }
+
+  $('#refresh').addEventListener('click', loadEmails);
+  $('#state-filter').addEventListener('change', loadEmails);
+  loadAccount();
+  loadEmails();
+</script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+{
+  "name": "visnam-email-marketing-example",
+  "version": "1.0.0",
+  "description": "Ví dụ Node.js tích hợp Tenant API Email Marketing của Visnam Center",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": "./src/index.js",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "test": "node --test test/client.test.js test/app.test.js",
+    "app": "node app/server.js",
+    "example:account": "node examples/01-check-account.js",
+    "example:send": "node examples/02-send-email.js",
+    "example:attachment": "node examples/03-send-with-attachment.js",
+    "example:list": "node examples/04-list-emails.js",
+    "example:idempotency": "node examples/05-idempotent-retry.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "multer": "^2.0.2"
+  }
+}
