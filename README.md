@@ -6,6 +6,8 @@ Repo mẫu minh họa cách hệ thống của bạn gửi email qua **Tenant AP
 - các script CLI chạy được ngay (`examples/`);
 - một app Express mẫu (`app/`) có form gửi email, upload file đính kèm và bảng trạng thái.
 
+File `huong-dan-tich-hop-email-marketing.html` được bàn giao cùng sample có **Mục lục** chung gồm 13 phần theo thứ tự. Các phần 10–13 hướng dẫn webhook, cảnh báo và báo cáo, thử tích hợp, mẫu email và gửi theo lô.
+
 > Repo này gọi **server thật**. Mỗi email được SES nhận sẽ tiêu 1 lượt gửi đã mua; mỗi file upload tiêu dung lượng đính kèm đã mua.
 
 ## Luồng hoạt động
@@ -154,6 +156,8 @@ Cách dùng đúng:
 | `deliveryState` | `pending`, `delivered`, `bounced`, `complained`, `failed` | Kết quả giao thư theo sự kiện từ SES |
 
 `waitForEmail(id)` dừng khi thư `accepted`, `failed`, `suppressed` hoặc `manual_review`. Truyền `{ untilDelivery: true }` để chờ thêm tới khi `deliveryState` khác `pending`.
+
+`SES_RESULT_UNKNOWN` là kết quả gửi chưa rõ (mạng/timeout/5xx hoặc lỗi chưa được phân loại chắc chắn), không chứng minh SES đã nhận hay chưa nhận. Giữ `messageId`, thời điểm và Idempotency-Key để liên hệ Visnam đối soát; không gửi lại bằng key mới. Lượt/quota vẫn được giữ và worker không tự retry trạng thái này. Visnam tra sự kiện log `email_marketing.ses_send_failed` theo mã thư; metadata AWS có thể thiếu khi lỗi mạng. Log vận hành bổ sung `errorMessage` đã lọc dữ liệu nhạy cảm, đưa về một dòng và giới hạn 2048 ký tự để đọc lý do AWS trả về; trường này không được thêm vào response API/webhook hoặc SDK. `SES_REJECTED` là nhóm lỗi từ chối được nhận diện, kết thúc thất bại và hoàn lượt theo `creditState`. Log mới không phục hồi chi tiết các lỗi cũ; không gửi lại thư chỉ để lấy log.
 
 ## Đính kèm file
 
