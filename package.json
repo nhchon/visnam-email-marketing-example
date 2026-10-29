@@ -11,13 +11,17 @@
     "node": ">=18.17"
   },
   "scripts": {
-    "test": "node --test test/client.test.js test/app.test.js",
+    "test": "node --test test/client.test.js test/app.test.js test/integration.test.js",
     "app": "node app/server.js",
     "example:account": "node examples/01-check-account.js",
     "example:send": "node examples/02-send-email.js",
     "example:attachment": "node examples/03-send-with-attachment.js",
     "example:list": "node examples/04-list-emails.js",
-    "example:idempotency": "node examples/05-idempotent-retry.js"
+    "example:idempotency": "node examples/05-idempotent-retry.js",
+    "example:webhook": "node examples/06-webhook.js",
+    "example:report": "node examples/07-report.js",
+    "example:template": "node examples/08-template.js",
+    "example:batch": "node examples/09-batch.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

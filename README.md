@@ -18,7 +18,7 @@ Hệ thống của bạn ──POST /emails (202)──▶ Visnam Tenant API ─
 
 1. `POST /emails` giữ 1 lượt và xếp thư vào hàng đợi, trả **202** ngay với `messageId`.
 2. Worker của Visnam gửi thư qua Amazon SES.
-3. Bạn **tra cứu lại** (`GET /emails/:id`) để biết kết quả. Hiện Visnam **không gọi webhook** về hệ thống của bạn.
+3. Bạn **nhận webhook** đã đăng ký để biết kết quả, hoặc **tra cứu lại** (`GET /emails/:id`) để đối soát. Hướng dẫn nhận và xác minh webhook ở phần tích hợp mở rộng bên dưới.
 
 ## Điều kiện trước khi chạy
 
@@ -204,9 +204,91 @@ Body lỗi có dạng `{ "code": "..." }`. Riêng `VALIDATION_FAILED` có thêm 
 
 ## Chưa hỗ trợ
 
-- Webhook báo kết quả về hệ thống của bạn (dùng polling).
-- Chiến dịch, danh bạ hoặc gửi hàng loạt trong một request.
+- Chiến dịch hoặc danh bạ trên hệ thống khách. API đã hỗ trợ lô tối đa 50 email độc lập.
 - Thống kê mở thư và click.
+
+## Tích hợp mở rộng: webhook → cảnh báo/báo cáo → thử tích hợp → mẫu và lô
+
+Backend Visnam cần được nâng cấp trước khi dùng các API này. API key cũ không tự được cấp scope mới; chỉ cấp các scope cần dùng:
+
+| Chức năng | Scope |
+|---|---|
+| Xem/cấu hình, đổi secret, replay webhook | `webhooks:read`, `webhooks:write` |
+| Cảnh báo/báo cáo, sửa ngưỡng | `reports:read`, `alerts:write` |
+| Mô phỏng webhook không gửi mail | `sandbox:write` |
+| Xem/soạn mẫu | `templates:read`, `templates:write` |
+| Gửi mẫu hoặc lô | `emails:send` |
+
+### 1. Receiver webhook
+
+1. Chạy app mẫu sau reverse proxy HTTPS công khai cổng 443, URL nhận là `https://app.example.com/webhooks/visnam`. Không dùng localhost/IP riêng; Visnam yêu cầu DNS có A record công khai, không theo redirect và chưa hỗ trợ đích chỉ IPv6.
+2. Cấu hình trong portal hoặc gọi `client.saveWebhook({url,events,enabled:true})`. Mỗi tenant có một endpoint. Sự kiện gồm `email.accepted`, `email.delivered`, `email.bounced`, `email.complained`, `email.failed`, `email.suppressed`, `email.unsubscribed`, `account.alert`, `integration.test`.
+3. Lưu `signingSecret` vào `VISNAM_WEBHOOK_SECRET` và restart app nhận. Secret chỉ được trả khi tạo lần đầu hoặc đổi secret. Không log secret hoặc đưa vào frontend. API key không dùng để xác minh webhook.
+4. App đọc raw body trước middleware JSON, xác minh HMAC và timestamp 5 phút bằng `verifyVisnamWebhook`, lưu inbox trước 200; lỗi lưu trả 503 để Visnam retry. `app/webhook-inbox.js` ghi file hoàn chỉnh vào `.local/webhook-events` và chống trùng theo `eventId`; thư mục này không được commit. Production nhiều máy dùng bảng inbox có UNIQUE(event_id), cùng transaction xử lý nghiệp vụ hoặc worker inbox.
+5. Không dùng `test=true` cập nhật trạng thái đơn/thư thật. Inbox mẫu chỉ lưu sự kiện, bạn bổ sung xử lý nghiệp vụ riêng. Bảo vệ file inbox vì payload có thể chứa email người nhận; tự đặt thời hạn giữ dữ liệu phù hợp.
+
+Chữ ký: header `X-Visnam-Signature` bằng `v1=` + HMAC-SHA256 hex của `X-Visnam-Timestamp + '.' + rawBody`, ký bằng signing secret. Payload gồm `eventId`, `type`, `occurredAt` (lúc tạo thông báo), `test`, `data` chứa messageId/referenceId/to/state/deliveryState/errorCode. Cảnh báo có thêm data.alert. Webhook không chứa nội dung thư.
+
+Thông báo có thể trùng và khác thứ tự; xác minh chữ ký không thay thế chống trùng theo eventId. Dùng `getEmail` đối soát khi cần, không lấy sự kiện đến cuối làm kết quả cuối một cách máy móc. Delivered nghĩa máy chủ nhận đã tiếp nhận, không bảo đảm inbox hoặc người nhận đã đọc.
+
+Tối đa 8 lần tự giao: lần đầu rồi chờ 5 giây, 30 giây, 2 phút, 10 phút, 1 giờ, 6 giờ, 12 giờ sau mỗi lỗi. Non-2xx, redirect hoặc timeout 10 giây đều thất bại. Dùng `listWebhookDeliveries()`/`getWebhookAttempts(id)` xem lịch sử; `replayWebhook(id)` chỉ xếp giao lại thông báo failed/succeeded với cùng eventId, không gửi lại email/trừ lượt. Tắt endpoint giữ backlog, đổi URL áp dụng cả backlog. `rotateWebhookSecret()` thay secret cho lần giao tiếp theo, request đang bay có thể còn dùng secret cũ; mất response thì đổi lại và cập nhật receiver.
+
+### 2. Cảnh báo và báo cáo
+
+`getAlerts()` trả `{policy,alerts,windowHours:24}`. `saveAlertPolicy()` nhận đủ sáu trường:
+
+```js
+await client.saveAlertPolicy({
+  lowCredits: 100, lowStorageBytes: 104857600, queueAgeMinutes: 30,
+  bouncePercent: 5, complaintPercent: 0.1, minimumSample: 100,
+});
+const report = await client.getReport({
+  from: '2026-10-28T00:00:00Z', to: '2026-10-29T23:59:59Z',
+});
+```
+
+Các ngưỡng là mặc định Visnam, không phải giới hạn AWS. LOW_CREDITS/LOW_STORAGE khi khả dụng ≤ ngưỡng; QUEUE_DELAYED khi thư queued quá ngưỡng; WEBHOOK_FAILURES khi có thông báo hết số lần thử trong 24 giờ; HIGH_BOUNCE_RATE/HIGH_COMPLAINT_RATE dùng cohort accepted 24 giờ và tối thiểu minimumSample. Đăng ký account.alert để nhận chủ động: kiểm tra theo lô 20 tenant/phút, mỗi mã tối đa một thông báo/giờ.
+
+Báo cáo nhận from/to UTC kết thúc Z bắt buộc, khoảng tối đa 90 ngày và tùy chọn senderId. Nhóm theo ngày tạo thư, kết quả giao phản ánh hiện tại. Cột accepted/delivered/bounced/complained có thể chồng nhau, không cộng thành total. Portal có nút xuất CSV; API `GET /reports.csv` dùng cùng bộ lọc và trả CSV UTF-8 BOM.
+
+### 3. Thử webhook không gửi email thật
+
+```js
+await client.simulateEvent({ type: 'email.bounced', referenceId: 'integration-test-001' });
+```
+
+Cần endpoint đang bật; mọi sự kiện thử có test=true, messageId/to=null, không SES/S3, không trừ ví, không xuất hiện trong báo cáo thật. Loại thử không cần nằm trong danh sách events đã đăng ký. Không phải môi trường gửi email sandbox riêng; đây là mô phỏng thông báo webhook. `npm test` kiểm tra chữ ký, body bị sửa, hết hạn timestamp và lỗi lưu inbox bằng HTTP local/giả, không gọi AWS.
+
+### 4. Mẫu có phiên bản và gửi theo lô
+
+```js
+const templateId = crypto.randomUUID(); // Hoặc import randomUUID từ node:crypto; lưu ID để sửa/retry.
+const template = await client.saveTemplate(templateId, {
+  name: 'Xác nhận đơn', subject: 'Đơn {{orderId}}', text: 'Xin chào {{name}}', version: 0,
+});
+await client.previewTemplate(template.id, { name: 'Khách mẫu', orderId: 'DH-001' });
+// Gửi thật, cần emails:send và lượt khả dụng:
+await client.sendTemplate(template.id, {
+  senderId, to, version: template.version, variables: { name: 'Khách mẫu', orderId: 'DH-001' },
+  referenceId: 'DH-001',
+}, { idempotencyKey: idempotencyKeyFrom('DH-001:confirmation') });
+```
+
+`version=0` khi tạo, dùng version hiện tại khi sửa; 409 TEMPLATE_VERSION_CONFLICT khi mẫu đã đổi. Lưu nội dung bất biến của từng phiên bản; thư đã nhận giữ snapshot riêng. Biến dạng `{{name}}`, tên bắt đầu bằng chữ, chỉ chữ/số/gạch dưới, tối đa 64 ký tự; tối đa 50 biến, mỗi giá trị ≤10000 ký tự. Biến HTML được escape. Không đặt dữ liệu không tin cậy vào URL/style/script. Thiếu biến/sai cú pháp/nội dung render quá 60 KB/subject sai trả 422. Preview không gửi thư.
+
+Gửi từ mẫu dùng nội dung bất biến của version đã chọn, kể cả mẫu hiện tại đã đổi. Retry giữ nguyên key, version và biến. Preview nhận version tùy chọn: `previewTemplate(id, variables, {version: 1})`; bỏ version thì render bản hiện tại. Phiên bản không tồn tại trả 404 TEMPLATE_NOT_FOUND.
+
+```js
+const result = await client.sendBatch([
+  { idempotencyKey: idempotencyKeyFrom('DH-001:confirmation'), message: firstPayload },
+  { idempotencyKey: idempotencyKeyFrom('DH-002:confirmation'), message: secondPayload },
+]);
+for (const item of result.data) console.log(item.index, item.status, item.body);
+```
+
+Lô có 1–50 mục, không lặp key. HTTP 200 của lô không có nghĩa mọi thư đã nhận; đọc status từng mục, 202 nghĩa đã nhận. Mỗi mục có transaction và hạn mức API riêng; không rollback cả lô. Retry đúng key/nội dung của từng mục, kể cả khi timeout cả lô. Dùng `newIdempotencyKey` một lần và lưu lại hoặc dẫn xuất từ mã nghiệp vụ ổn định; không sinh key mới mỗi lần retry.
+
+Ví dụ mới: `npm run example:webhook` (đọc cấu hình và phát một sự kiện thử), `npm run example:report` (chỉ đọc), `npm run example:template` (soạn/render, không gửi), `npm run example:batch` (chỉ gửi thật nếu DEMO_SEND_REAL=true và DEMO_BATCH_REFERENCE đã được đặt cố định). Các trường, giới hạn và mã lỗi đầy đủ nằm trong HTML hướng dẫn Visnam bàn giao cùng sample.
 
 ## Giấy phép
 

@@ -5,18 +5,29 @@ import express from 'express';
 import multer from 'multer';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { VisnamEmailClient, VisnamApiError, MAX_FILE_BYTES, assertIdempotencyKey } from '../src/index.js';
+import { verifyVisnamWebhook } from '../src/webhook.js';
+import { storeWebhookEvent } from './webhook-inbox.js';
 
 /**
  * Tạo app với một client đã cấu hình sẵn. Tách khỏi phần khởi động để kiểm thử
  * có thể truyền client giả mà không cần key thật.
  * @param {VisnamEmailClient} client
  */
-export function createApp(client) {
+export function createApp(client, { webhookSecret = process.env.VISNAM_WEBHOOK_SECRET, storeEvent = storeWebhookEvent } = {}) {
   const app = express();
   // Giữ file trong bộ nhớ rồi chuyển thẳng lên Visnam; giới hạn trùng với giới hạn phía server
   // để file quá lớn bị chặn ngay tại đây, không tốn băng thông gửi đi.
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_FILE_BYTES, files: 1 } });
 
+  // Raw body phải được đọc trước express.json; ký lại JSON đã parse sẽ không còn khớp chữ ký.
+  app.post('/webhooks/visnam', express.text({ type: 'application/json', limit: '64kb' }), async (req, res) => {
+    if (!webhookSecret) return res.status(503).json({ code: 'WEBHOOK_SECRET_NOT_CONFIGURED' });
+    let event;
+    try { event = verifyVisnamWebhook(req.body, { signature: req.get('X-Visnam-Signature'), timestamp: req.get('X-Visnam-Timestamp') }, webhookSecret); }
+    catch { return res.status(400).json({ code: 'WEBHOOK_INVALID' }); }
+    try { await storeEvent(event); return res.status(200).json({ acknowledged: true }); }
+    catch { return res.status(503).json({ code: 'WEBHOOK_INBOX_UNAVAILABLE' }); }
+  });
   app.use(express.json({ limit: '200kb' }));
   app.use(express.static(fileURLToPath(new URL('./public', import.meta.url))));
 

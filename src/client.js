@@ -96,8 +96,7 @@ export class VisnamEmailClient {
    * Gửi **một** email tới **một** người nhận. Scope `emails:send`.
    *
    * Server trả 202 ngay sau khi giữ 1 lượt và xếp thư vào hàng đợi; việc gọi SES diễn ra sau đó.
-   * Muốn biết kết quả thì poll bằng `getEmail` hoặc `waitForEmail`, vì hệ thống không gọi
-   * webhook về phía bạn.
+   * Muốn biết kết quả thì nhận webhook đã đăng ký, hoặc poll bằng `getEmail`/`waitForEmail` để đối soát.
    *
    * `idempotencyKey` là bắt buộc:
    * - Gửi lại cùng key và cùng nội dung: nhận lại đúng message cũ, không gửi trùng, không trừ thêm lượt.
@@ -264,6 +263,49 @@ export class VisnamEmailClient {
       if (Date.now() + intervalMs > deadline) return { file, settled: false };
       await this.sleep(intervalMs);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tích hợp mở rộng: mỗi phương thức chỉ gọi một request, không tự retry mutation.
+  // Scope chi tiết và ví dụ nằm trong README; key cũ không được tự cấp scope mới.
+  // ---------------------------------------------------------------------------
+
+  /** Scope webhooks:read; không trả signing secret. */
+  getWebhook() { return this.#json('GET', '/webhook'); }
+  /** Scope webhooks:write; signingSecret chỉ trả khi tạo lần đầu, cần lưu tại backend. */
+  saveWebhook(config) { return this.#json('PUT', '/webhook', { json: config }); }
+  /** Đổi secret có tác dụng ngay; không tự retry nếu mất response. Scope webhooks:write. */
+  rotateWebhookSecret() { return this.#json('POST', '/webhook/rotate-secret', { json: {} }); }
+  /** Scope webhooks:read. */
+  listWebhookDeliveries(filter = {}) { return this.#json('GET', '/webhook/deliveries', { query: filter }); }
+  /** Scope webhooks:read. */
+  getWebhookAttempts(id) { return this.#json('GET', `/webhook/deliveries/${encodeURIComponent(id)}/attempts`); }
+  /** Giao lại thông báo, giữ eventId; không gửi lại email. Scope webhooks:write. */
+  replayWebhook(id) { return this.#json('POST', `/webhook/deliveries/${encodeURIComponent(id)}/replay`, { json: {} }); }
+  /** Chỉ tạo webhook giả test=true, không gửi mail hoặc trừ lượt. Scope sandbox:write. */
+  simulateEvent(event = {}) { return this.#json('POST', '/sandbox/events', { json: event }); }
+  /** Scope reports:read. */
+  getAlerts() { return this.#json('GET', '/alerts'); }
+  /** Scope alerts:write; gửi đủ các ngưỡng, xem README. */
+  saveAlertPolicy(policy) { return this.#json('PUT', '/alerts', { json: policy }); }
+  /** Scope reports:read; khoảng UTC tối đa 90 ngày, ngày nhóm theo lúc tạo thư. */
+  getReport(filter) { return this.#json('GET', '/reports', { query: filter }); }
+  /** Scope templates:read. */
+  listTemplates(filter = {}) { return this.#json('GET', '/templates', { query: filter }); }
+  /** Scope templates:write; UUID client tạo, version=0 khi mới, phiên bản hiện tại khi sửa. */
+  saveTemplate(id, template) { return this.#json('PUT', `/templates/${encodeURIComponent(id)}`, { json: template }); }
+  /** Scope templates:read; render bản đã lưu, không gửi thư. */
+  previewTemplate(id, variables = {}, { version } = {}) { return this.#json('POST', `/templates/${encodeURIComponent(id)}/preview`, { json: { variables, version } }); }
+  /** Scope emails:send; dùng nội dung phiên bản bất biến, retry giữ nguyên key, biến và phiên bản. */
+  sendTemplate(id, payload, { idempotencyKey } = {}) {
+    assertIdempotencyKey(idempotencyKey);
+    return this.#json('POST', `/templates/${encodeURIComponent(id)}/send`, { json: payload, idempotencyKey });
+  }
+  /** Mỗi mục {idempotencyKey,message}; đọc status từng mục, không suy ra thành công từ HTTP 200. */
+  sendBatch(items) {
+    if (!Array.isArray(items) || !items.length || items.length > 50) throw new TypeError('Lô cần từ 1 đến 50 email');
+    for (const item of items) assertIdempotencyKey(item.idempotencyKey);
+    return this.#json('POST', '/emails/batch', { json: { items } });
   }
 
   // ---------------------------------------------------------------------------
