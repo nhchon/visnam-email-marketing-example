@@ -64,3 +64,18 @@ test('upload qua app yêu cầu Idempotency-Key và chuyển đúng tên, loại
     assert.equal(uploads[0].file.data.toString(), '%PDF-1.4');
   } finally { await app.close(); }
 });
+
+test('App mẫu chuyển nguyên nội dung 1 MB/trường qua parser JSON, chặn tổng request quá 10 MiB', async () => {
+  let handled = 0;
+  const content = 'ế'.repeat(333333) + 'x';
+  const app = await startApp({ sendEmail: async payload => {
+    handled++; assert.equal(payload.html, content); assert.equal(payload.text, content); return { messageId: 'large-content' };
+  } });
+  try {
+    const send = body => fetch(`${app.url}/api/emails`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const ok = await send({ idempotencyKey: 'large-web:1', senderId: 's1', to: 'a@example.com', subject: 'Thử', html: content, text: content });
+    assert.equal(ok.status, 202); await ok.json(); assert.equal(handled, 1);
+    const tooLarge = await send({ html: 'a'.repeat(10 * 1024 * 1024 + 1) });
+    assert.equal(tooLarge.status, 413); await tooLarge.json(); assert.equal(handled, 1);
+  } finally { await app.close(); }
+});

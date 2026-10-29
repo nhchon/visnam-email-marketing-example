@@ -21,7 +21,8 @@
     "example:webhook": "node examples/06-webhook.js",
     "example:report": "node examples/07-report.js",
     "example:template": "node examples/08-template.js",
-    "example:batch": "node examples/09-batch.js"
+    "example:batch": "node examples/09-batch.js",
+    "example:content": "node examples/10-content-size.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

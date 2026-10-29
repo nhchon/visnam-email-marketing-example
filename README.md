@@ -110,8 +110,14 @@ Body chỉ được chứa các trường dưới đây; trường lạ sẽ b�
 | `senderId` | UUID | Có | Lấy từ `GET /senders` |
 | `to` | string | Có | **Một** địa chỉ email, tối đa 320 ký tự |
 | `subject` | string | Có | 1–998 ký tự, không chứa xuống dòng |
-| `html` | string | Cần `html` hoặc `text` | Tối đa 60.000 byte UTF-8 |
-| `text` | string | Cần `html` hoặc `text` | Tối đa 60.000 byte UTF-8 |
+| `html` | string | Cần `html` hoặc `text` | Tối đa 1.000.000 byte UTF-8 |
+| `text` | string | Cần `html` hoặc `text` | Tối đa 1.000.000 byte UTF-8 |
+
+`html` và `text` được kiểm tra độc lập: mỗi trường tối đa **1 MB = 1.000.000 byte UTF-8**, cả trước/sau render mẫu và HTML escape. Đo bằng `Buffer.byteLength(value, 'utf8')`, không dùng số ký tự. Đúng giới hạn được nhận; vượt một byte trả 422 `VALIDATION_FAILED` hoặc `TEMPLATE_RENDER_TOO_LARGE` khi render. SDK chặn nội dung gửi trực tiếp quá giới hạn tại máy bằng TypeError; các API mẫu vẫn kiểm tra phía server. Hằng số `MAX_BODY_BYTES` được export từ SDK và sample không phụ thuộc mã nguồn Center.
+
+Tổng JSON request tối đa **10 MiB = 10.485.760 byte**, kể cả với lô dưới 50 mục. Đo cả `Buffer.byteLength(JSON.stringify({ items }), 'utf8')` (gồm JSON escape và metadata), chia nhỏ lô khi nội dung lớn. Quá tổng giới hạn trả HTTP 413 trước xử lý. App Express mẫu dùng `express.json({ limit: '10mb' })`; reverse proxy của khách cũng phải cho phép JSON đến 10 MiB.
+
+Chạy `npm run example:content` để kiểm tra một nội dung tiếng Việt đúng 1 MB, hoặc `npm run example:content -- ./email.html` để đo file của bạn. Ví dụ chỉ đọc cục bộ, không cần API key và không gửi email. 1 MB là giới hạn chấp nhận; vẫn nên giữ email gọn để hạn chế ứng dụng nhận thư thu gọn nội dung.
 | `referenceId` | string | Không | Tối đa 128 ký tự; mã của hệ thống bạn để tra cứu lại |
 | `attachmentIds` | UUID[] | Không | Tối đa 3 file `ready`, không lặp, tổng tối đa 20 MiB |
 
@@ -274,7 +280,7 @@ await client.sendTemplate(template.id, {
 }, { idempotencyKey: idempotencyKeyFrom('DH-001:confirmation') });
 ```
 
-`version=0` khi tạo, dùng version hiện tại khi sửa; 409 TEMPLATE_VERSION_CONFLICT khi mẫu đã đổi. Lưu nội dung bất biến của từng phiên bản; thư đã nhận giữ snapshot riêng. Biến dạng `{{name}}`, tên bắt đầu bằng chữ, chỉ chữ/số/gạch dưới, tối đa 64 ký tự; tối đa 50 biến, mỗi giá trị ≤10000 ký tự. Biến HTML được escape. Không đặt dữ liệu không tin cậy vào URL/style/script. Thiếu biến/sai cú pháp/nội dung render quá 60 KB/subject sai trả 422. Preview không gửi thư.
+`version=0` khi tạo, dùng version hiện tại khi sửa; 409 TEMPLATE_VERSION_CONFLICT khi mẫu đã đổi. Lưu nội dung bất biến của từng phiên bản; thư đã nhận giữ snapshot riêng. Biến dạng `{{name}}`, tên bắt đầu bằng chữ, chỉ chữ/số/gạch dưới, tối đa 64 ký tự; tối đa 50 biến, mỗi giá trị ≤10000 ký tự. Biến HTML được escape. Không đặt dữ liệu không tin cậy vào URL/style/script. Thiếu biến/sai cú pháp/nội dung render quá 1 MB (1.000.000 byte UTF-8)/subject sai trả 422. Preview không gửi thư.
 
 Gửi từ mẫu dùng nội dung bất biến của version đã chọn, kể cả mẫu hiện tại đã đổi. Retry giữ nguyên key, version và biến. Preview nhận version tùy chọn: `previewTemplate(id, variables, {version: 1})`; bỏ version thì render bản hiện tại. Phiên bản không tồn tại trả 404 TEMPLATE_NOT_FOUND.
 

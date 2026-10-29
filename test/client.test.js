@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   VisnamEmailClient, VisnamApiError, withRetry, isRetryable, isEmailSettled,
   newIdempotencyKey, idempotencyKeyFrom, IDEMPOTENCY_KEY_PATTERN,
+  MAX_BODY_BYTES,
 } from '../src/index.js';
 
 const API_KEY = `vem_${'a'.repeat(43)}`;
@@ -65,6 +66,19 @@ test('chặn tại máy subject có xuống dòng (chèn header), thiếu nội 
   assert.throws(() => client.sendEmail({ ...payload, text: undefined }, options), /html hoặc text/);
   assert.throws(() => client.sendEmail({ ...payload, attachmentIds: ['a', 'b', 'c', 'd'] }, options), /tối đa 3/);
   assert.throws(() => client.sendEmail({ ...payload, attachmentIds: ['a', 'a'] }, options), /lặp/);
+});
+
+test('SDK nhận đúng 1 MB UTF-8 mỗi trường, chặn thêm một byte trước khi gọi HTTP', async () => {
+  assert.equal(MAX_BODY_BYTES, 1_000_000);
+  for (const character of ['a', 'ế', '😀']) {
+    const bytes = Buffer.byteLength(character), exact = character.repeat(Math.floor(MAX_BODY_BYTES / bytes)) + 'x'.repeat(MAX_BODY_BYTES % bytes);
+    const { calls, fetchImpl } = fakeFetch({ status: 202, body: MESSAGE });
+    const client = createClient(fetchImpl);
+    await client.sendEmail({ ...payload, html: exact, text: exact }, { idempotencyKey: 'one-mb' });
+    const sent = JSON.parse(calls[0].body); assert.equal(Buffer.byteLength(sent.html), MAX_BODY_BYTES); assert.equal(Buffer.byteLength(sent.text), MAX_BODY_BYTES);
+    for (const field of ['html', 'text']) assert.throws(() => client.sendEmail({ ...payload, [field]: exact + 'x' }, { idempotencyKey: 'too-large' }), /1 MB/);
+    assert.equal(calls.length, 1);
+  }
 });
 
 test('lỗi server được chuẩn hóa theo code: 409 IDEMPOTENCY_CONFLICT không được retry', async () => {

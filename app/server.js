@@ -28,7 +28,8 @@ export function createApp(client, { webhookSecret = process.env.VISNAM_WEBHOOK_S
     try { await storeEvent(event); return res.status(200).json({ acknowledged: true }); }
     catch { return res.status(503).json({ code: 'WEBHOOK_INBOX_UNAVAILABLE' }); }
   });
-  app.use(express.json({ limit: '200kb' }));
+  // Tổng JSON request tối đa 10 MiB như API Visnam; html và text có giới hạn riêng 1 MB/trường.
+  app.use(express.json({ limit: '10mb' }));
   app.use(express.static(fileURLToPath(new URL('./public', import.meta.url))));
 
   app.get('/api/account', async (req, res, next) => {
@@ -85,6 +86,8 @@ export function createApp(client, { webhookSecret = process.env.VISNAM_WEBHOOK_S
  * Không bao giờ đưa API key hay stack trace vào response.
  */
 function errorHandler(error, req, res, next) { // eslint-disable-line no-unused-vars
+  // Lỗi parser xảy ra trước route/SDK: trả đúng 413 để workflow không nhầm là lỗi server cần retry.
+  if (error.type === 'entity.too.large' && error.limit === 10 * 1024 * 1024) return res.status(413).json({ code: 'REQUEST_TOO_LARGE', message: 'Tổng JSON request vượt giới hạn 10 MiB.' });
   if (error instanceof VisnamApiError) {
     if (error.retryAfterSeconds != null) res.set('Retry-After', String(error.retryAfterSeconds));
     return res.status(error.status || 502).json({ code: error.code, message: error.message, issues: error.issues });

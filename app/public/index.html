@@ -50,13 +50,14 @@
 
   <section>
     <h2>Gửi email</h2>
+    <p>Mỗi trường HTML/text tối đa 1 MB (1.000.000 byte UTF-8), kiểm tra riêng. Tổng JSON request tối đa 10 MiB.</p>
     <form id="send-form" class="grid">
       <label>Sender<select name="senderId" required></select></label>
       <label>Người nhận<input name="to" type="email" required placeholder="khach@example.com"></label>
       <label>Tiêu đề<input name="subject" required maxlength="998"></label>
       <label>Mã tham chiếu (tùy chọn)<input name="referenceId" maxlength="128" placeholder="order-1001"></label>
-      <label style="grid-column: 1 / -1">Nội dung HTML<textarea name="html"><p>Xin chào!</p></textarea></label>
-      <label style="grid-column: 1 / -1">Nội dung text (tùy chọn)<textarea name="text"></textarea></label>
+      <label style="grid-column: 1 / -1">Nội dung HTML<textarea name="html" maxlength="1000000"><p>Xin chào!</p></textarea></label>
+      <label style="grid-column: 1 / -1">Nội dung text (tùy chọn)<textarea name="text" maxlength="1000000"></textarea></label>
       <div style="grid-column: 1 / -1">
         <label>Đính kèm (PDF/JPG/PNG, tối đa 10 MiB, tối đa 3 file)<input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png"></label>
         <ul class="files" id="file-list"></ul>

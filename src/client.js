@@ -8,7 +8,8 @@ export const API_PREFIX = '/api/v1/email-marketing';
 const API_KEY_PATTERN = /^vem_[A-Za-z0-9_-]{43}$/;
 
 /** Giới hạn khớp với validation phía server (`email-marketing.schemas.ts`). */
-const MAX_BODY_BYTES = 60000;
+// Kiểm tra độc lập html/text theo byte UTF-8; không phụ thuộc mã nguồn Visnam Center khi bàn giao sample.
+export const MAX_BODY_BYTES = 1_000_000;
 const MAX_SUBJECT_LENGTH = 998;
 const MAX_ATTACHMENTS = 3;
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -107,7 +108,7 @@ export class VisnamEmailClient {
    * @param {string} payload.senderId UUID lấy từ `listSenders()`.
    * @param {string} payload.to Một địa chỉ người nhận.
    * @param {string} payload.subject 1–998 ký tự, không chứa xuống dòng.
-   * @param {string} [payload.html] Cần `html` hoặc `text`; mỗi trường tối đa 60.000 byte UTF-8.
+   * @param {string} [payload.html] Cần `html` hoặc `text`; mỗi trường tối đa 1.000.000 byte UTF-8 (1 MB).
    * @param {string} [payload.text]
    * @param {string} [payload.referenceId] Mã của hệ thống bạn (tối đa 128 ký tự), dùng để lọc lại sau này.
    * @param {string[]} [payload.attachmentIds] Tối đa 3 file `ready` lấy từ `uploadFile`. Server không đính kèm
@@ -420,7 +421,7 @@ function validateSendPayload(payload) {
   if (/[\r\n\0]/.test(subject)) throw new TypeError('subject không được chứa ký tự xuống dòng');
   if (!html && !text) throw new TypeError('Cần html hoặc text');
   for (const [name, value] of [['html', html], ['text', text]]) {
-    if (value !== undefined && Buffer.byteLength(value, 'utf8') > MAX_BODY_BYTES) throw new TypeError(`${name} vượt quá 60.000 byte`);
+    if (value !== undefined && Buffer.byteLength(value, 'utf8') > MAX_BODY_BYTES) throw new TypeError(`${name} vượt quá 1 MB (1.000.000 byte UTF-8)`);
   }
   if (attachmentIds !== undefined) {
     if (!Array.isArray(attachmentIds) || attachmentIds.length > MAX_ATTACHMENTS) throw new TypeError('attachmentIds tối đa 3 phần tử');
