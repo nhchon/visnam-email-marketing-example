@@ -53,6 +53,10 @@ cp .env.example .env      # rồi điền VISNAM_BASE_URL, VISNAM_API_KEY, DEMO_
 npm run example:account   # kiểm tra key, xem ví, lấy senderId → điền VISNAM_SENDER_ID
 ```
 
+`VISNAM_BASE_URL=https://center.example.com` trong file mẫu là địa chỉ minh họa, phải thay bằng host được Visnam cấp: production dùng `https://center.visnam.com`, dev dùng `https://dev-center.visnam.com`. Chỉ điền scheme + domain, không thêm `/api/v1/email-marketing`. Dùng API key của đúng môi trường.
+
+Nếu gặp `Lỗi API 0 NETWORK_ERROR: ... fetch failed`, sample chưa nhận được phản hồi HTTP; riêng thông báo này chưa cho biết nguyên nhân DNS, TLS, timeout hay kết nối bị ngắt. Với host minh họa, lỗi DNS có thể là `ENOTFOUND`. Kiểm tra `VISNAM_BASE_URL` trong `.env`, sau đó chạy `npm run example:account` để thử bằng truy vấn chỉ đọc. `401 API_KEY_INVALID` nghĩa đã kết nối được nhưng key sai, bị thu hồi hoặc không thuộc môi trường đó. Khi mất phản hồi upload/gửi thư, retry phải giữ nguyên Idempotency-Key; chạy lại script là lượt thực thi mới và tạo key mới, nên cần đối soát trước nếu request cũ có thể đã được xử lý.
+
 | Lệnh | Làm gì |
 |---|---|
 | `npm run example:account` | Xem ví lượt gửi, sender, domain và bản ghi DNS cần thêm |
@@ -201,9 +205,12 @@ Body lỗi có dạng `{ "code": "..." }`. Riêng `VALIDATION_FAILED` có thêm 
 | 422 | `ATTACHMENT_TYPE_INVALID`, `ATTACHMENT_TOTAL_TOO_LARGE` | Sai định dạng file, hoặc tổng file đính kèm vượt 20 MiB | Không |
 | 429 | `API_RATE_LIMITED` | Chờ `Retry-After` giây | **Có**, cùng key |
 | 503 | `EMAIL_SERVICE_UNAVAILABLE`, `ATTACHMENT_SERVICE_UNAVAILABLE`, ... | Dịch vụ tạm thời không sẵn sàng | **Có**, cùng key |
+| 503 | `ATTACHMENT_SERVICE_NOT_CONFIGURED` | Cấu hình kho tài liệu phía Visnam thiếu/sai; cần người vận hành sửa trước | Cùng key sau khi sửa cấu hình |
 | — | `NETWORK_ERROR` (do SDK đặt) | Không nhận được response | **Có**, cùng key |
 
 `isRetryable(error)` và `withRetry()` trong SDK đã cài sẵn quy tắc này.
+
+Riêng `ATTACHMENT_SERVICE_NOT_CONFIGURED` cần xử lý tại **backend Visnam Center**, không phải `.env` của sample. Người vận hành kiểm tra `EMAIL_MARKETING_FILES_BUCKET` (bucket S3 private hợp lệ), `EMAIL_MARKETING_FILES_REGION` hoặc giá trị dự phòng `EMAIL_MARKETING_AWS_REGION`, `EMAIL_MARKETING_FILES_TOKEN_SECRET` (ít nhất 32 ký tự) và `EMAIL_MARKETING_BASE_URL` (HTTPS, không chứa credential/query/fragment). API và worker phải dùng cùng cấu hình và quyền AWS phù hợp, rồi khởi động lại cả hai. Tạo khóa ký link tải một lần và lưu ổn định; đây là khóa riêng, không phải `VISNAM_WEBHOOK_SECRET`. Không cấp AWS credential cho ứng dụng khách. Lỗi này ở bước upload được trả trước khi đọc file, tạo bản ghi hoặc giữ byte; chạy lại ngay mà chưa sửa cấu hình vẫn lỗi. Backend kiểm tra cấu hình trước quyền dung lượng, nên mã 503 này có thể che lỗi tenant chưa mua gói; sau khi cấu hình hợp lệ, tenant chưa có dung lượng được cấp sẽ nhận `403 ATTACHMENT_PLAN_REQUIRED`. Mua gói không thay thế việc cấu hình kho tài liệu phía Center.
 
 ## Bảo mật
 
