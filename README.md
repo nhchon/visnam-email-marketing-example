@@ -118,14 +118,14 @@ Body chỉ được chứa các trường dưới đây; trường lạ sẽ b�
 | `subject` | string | Có | 1–998 ký tự, không chứa xuống dòng |
 | `html` | string | Cần `html` hoặc `text` | Tối đa 1.000.000 byte UTF-8 |
 | `text` | string | Cần `html` hoặc `text` | Tối đa 1.000.000 byte UTF-8 |
+| `referenceId` | string | Không | Tối đa 128 ký tự; mã của hệ thống bạn để tra cứu lại |
+| `attachmentIds` | UUID[] | Không | Tối đa 3 file `ready`, không lặp, tổng tối đa 20 MiB |
 
 `html` và `text` được kiểm tra độc lập: mỗi trường tối đa **1 MB = 1.000.000 byte UTF-8**, cả trước/sau render mẫu và HTML escape. Đo bằng `Buffer.byteLength(value, 'utf8')`, không dùng số ký tự. Đúng giới hạn được nhận; vượt một byte trả 422 `VALIDATION_FAILED` hoặc `TEMPLATE_RENDER_TOO_LARGE` khi render. SDK chặn nội dung gửi trực tiếp quá giới hạn tại máy bằng TypeError; các API mẫu vẫn kiểm tra phía server. Hằng số `MAX_BODY_BYTES` được export từ SDK và sample không phụ thuộc mã nguồn Center.
 
 Tổng JSON request tối đa **10 MiB = 10.485.760 byte**, kể cả với lô dưới 50 mục. Đo cả `Buffer.byteLength(JSON.stringify({ items }), 'utf8')` (gồm JSON escape và metadata), chia nhỏ lô khi nội dung lớn. Quá tổng giới hạn trả HTTP 413 trước xử lý. App Express mẫu dùng `express.json({ limit: '10mb' })`; reverse proxy của khách cũng phải cho phép JSON đến 10 MiB.
 
 Chạy `npm run example:content` để kiểm tra một nội dung tiếng Việt đúng 1 MB, hoặc `npm run example:content -- ./email.html` để đo file của bạn. Ví dụ chỉ đọc cục bộ, không cần API key và không gửi email. 1 MB là giới hạn chấp nhận; vẫn nên giữ email gọn để hạn chế ứng dụng nhận thư thu gọn nội dung.
-| `referenceId` | string | Không | Tối đa 128 ký tự; mã của hệ thống bạn để tra cứu lại |
-| `attachmentIds` | UUID[] | Không | Tối đa 3 file `ready`, không lặp, tổng tối đa 20 MiB |
 
 Gửi cho nhiều người thì gọi nhiều lần, mỗi lần một người nhận và một Idempotency-Key riêng.
 
