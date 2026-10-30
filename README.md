@@ -214,6 +214,8 @@ Riêng `ATTACHMENT_SERVICE_NOT_CONFIGURED` cần xử lý tại **backend Visnam
 
 ## Bảo mật
 
+Khi gặp 503 ở API tài liệu, lưu lại header response `X-Request-ID` để người vận hành tra error log `email_marketing.file_request_failed` của Center. Với `ATTACHMENT_SERVICE_NOT_CONFIGURED`, trường log `sourceCode` chỉ liệt kê tên biến không hợp lệ; response vẫn là `{code}`. Biến “đã có giá trị” chưa bảo đảm đúng định dạng hoặc môi trường PM2 đã cập nhật. Khách không cần gửi API key/secret để đối soát log.
+
 - API key cho phép tiêu lượt đã trả tiền. Chỉ dùng ở **phía server**; không đưa vào trình duyệt, app di động hay repo. App mẫu cho thấy cách trình duyệt gọi qua server của bạn.
 - Không commit file `.env`; `.gitignore` đã loại trừ nó.
 - Mỗi hệ thống dùng một key riêng với scope tối thiểu, đặt ngày hết hạn và thu hồi ngay khi nghi lộ.

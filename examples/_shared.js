@@ -48,7 +48,7 @@ const HINTS = {
   IDEMPOTENCY_CONFLICT: 'Cùng Idempotency-Key nhưng nội dung khác. Thao tác mới phải dùng key mới.',
   API_RATE_LIMITED: 'Vượt 20 request/giây. Chờ Retry-After rồi gửi lại cùng key.',
   // Cấu hình được kiểm tra trước khi nhận file/giữ dung lượng; khách không cần cấp AWS credential.
-  ATTACHMENT_SERVICE_NOT_CONFIGURED: 'Backend Visnam chưa cấu hình hợp lệ kho tài liệu. Người vận hành kiểm tra EMAIL_MARKETING_FILES_BUCKET, EMAIL_MARKETING_FILES_REGION (hoặc EMAIL_MARKETING_AWS_REGION), EMAIL_MARKETING_FILES_TOKEN_SECRET (ít nhất 32 ký tự) và EMAIL_MARKETING_BASE_URL (HTTPS), rồi restart API và worker Email Marketing. Không sửa VISNAM_WEBHOOK_SECRET hoặc thêm AWS key vào sample.',
+  ATTACHMENT_SERVICE_NOT_CONFIGURED: 'Backend Visnam chưa cấu hình hợp lệ kho tài liệu. Người vận hành kiểm tra EMAIL_MARKETING_FILES_BUCKET, EMAIL_MARKETING_FILES_REGION (hoặc EMAIL_MARKETING_AWS_REGION), EMAIL_MARKETING_FILES_TOKEN_SECRET (ít nhất 32 ký tự) và EMAIL_MARKETING_BASE_URL (HTTPS), rồi restart API và worker Email Marketing. Có giá trị chưa đủ: phải đúng định dạng và môi trường PM2. Tra error log email_marketing.file_request_failed; sourceCode chỉ tên biến sai. Không sửa VISNAM_WEBHOOK_SECRET hoặc thêm AWS key vào sample.',
   ATTACHMENT_PLAN_REQUIRED: 'Tenant chưa có gói dung lượng đính kèm.',
   ATTACHMENT_STORAGE_INSUFFICIENT: 'Không đủ dung lượng đính kèm. Mua thêm gói dung lượng.',
   ATTACHMENT_TYPE_INVALID: 'Chỉ nhận PDF/JPG/PNG thật, đuôi file và Content-Type phải khớp nội dung.',
