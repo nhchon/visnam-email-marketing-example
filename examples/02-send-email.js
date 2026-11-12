@@ -26,7 +26,9 @@ run(async () => {
   console.log(`Đã xếp hàng: messageId=${accepted.messageId}, state=${accepted.state}, creditState=${accepted.creditState}`);
 
   console.log('Đang chờ kết quả...');
-  const { message, settled } = await client.waitForEmail(accepted.messageId, { untilDelivery: true, timeoutMs: 180000 });
+  // untilDelivery=false: dừng ngay khi SES nhận thư (state=accepted). Kết quả giao thư
+  // (delivered/bounced) phụ thuộc sự kiện SNS đẩy về server nên nhận qua webhook, không chờ ở đây.
+  const { message, settled } = await client.waitForEmail(accepted.messageId, { untilDelivery: false, timeoutMs: 180000 });
   console.log(JSON.stringify(message, null, 2));
   if (!settled) {
     console.log('Hết thời gian chờ. Tra lại sau bằng GET /emails/:id; không gửi lại bằng key mới.');
